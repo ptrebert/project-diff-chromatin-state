@@ -1,0 +1,25 @@
+EID	group	hex_color	mnemonic	quality_rating	sample_name	sample_label	anatomy	biotype	age	sex
+E003	ESC	#924965	ESC.H1	1	H1 Cells	H1_Cell_Line	ESC	PrimaryCulture	CL	Male
+E004	ES-deriv	#4178AE	ESDR.H1.BMP4.MESO	0	H1 BMP4 Derived Mesendoderm Cultured Cells	H1_BMP4_Derived_Mesendoderm_Cultured_Cells	ESC_DERIVED	ESCDerived	CL	Male
+E005	ES-deriv	#4178AE	ESDR.H1.BMP4.TROP	1	H1 BMP4 Derived Trophoblast Cultured Cells	H1_BMP4_Derived_Trophoblast_Cultured_Cells	ESC_DERIVED	ESCDerived	CL	Male
+E006	ES-deriv	#4178AE	ESDR.H1.MSC	1	H1 Derived Mesenchymal Stem Cells	H1_Derived_Mesenchymal_Stem_Cells	ESC_DERIVED	ESCDerived	CL	Male
+E007	ES-deriv	#4178AE	ESDR.H1.NEUR.PROG	0	H1 Derived Neuronal Progenitor Cultured Cells	H1_Derived_Neuronal_Progenitor_Cultured_Cells	ESC_DERIVED	ESCDerived	CL	Male
+E050	HSC & B-cell	#678C69	BLD.MOB.CD34.PC.F	0	Primary hematopoietic stem cells G-CSF-mobilized Female	Mobilized_CD34_Primary_Cells_Female	BLOOD	PrimaryCell	fetal	Mixed
+E055	Epithelial	#FF9D0C	SKIN.PEN.FRSK.FIB.01	1	Foreskin Fibroblast Primary Cells skin01	Penis_Foreskin_Fibroblast_Primary_Cells_skin01	SKIN	PrimaryCulture	0Y	Male
+E056	Epithelial	#FF9D0C	SKIN.PEN.FRSK.FIB.02	0	Foreskin Fibroblast Primary Cells skin02	Penis_Foreskin_Fibroblast_Primary_Cells_skin02	SKIN	PrimaryCulture	0Y	Male
+E059	Epithelial	#FF9D0C	SKIN.PEN.FRSK.MEL.01	0	Foreskin Melanocyte Primary Cells skin01	Penis_Foreskin_Melanocyte_Primary_Cells_skin01	SKIN	PrimaryCulture	0Y	Male
+E084	Digestive	#C58DAA	GI.L.INT.FET	1	Fetal Intestine Large	Fetal_Intestine_Large	GI_INTESTINE	PrimaryTissue	15GW	Male
+E085	Digestive	#C58DAA	GI.S.INT.FET	1	Fetal Intestine Small	Fetal_Intestine_Small	GI_INTESTINE	PrimaryTissue	15GW	Male
+E094	Digestive	#C58DAA	GI.STMC.GAST	1	Gastric	Gastric	GI_STOMACH	PrimaryTissue	34Y	Male
+E097	Other	#999999	OVRY	1	Ovary	Ovary	OVARY	PrimaryTissue	30Y	Female
+E100	Muscle	#C2655D	MUS.PSOAS	1	Psoas Muscle	Psoas_Muscle	MUSCLE	PrimaryTissue	3Y_34Y	Male
+E109	Digestive	#C58DAA	GI.S.INT	1	Small Intestine	Small_Intestine	GI_INTESTINE	PrimaryTissue	3Y_34Y	Male
+E116	ENCODE2012	#000000	BLD.GM12878	0	GM12878 Lymphoblastoid Cells	GM12878_Lymphoblastoid	BLOOD	PrimaryCulture	n/a	Female
+E117	ENCODE2012	#000000	CRVX.HELAS3.CNCR	0	HeLa-S3 Cervical Carcinoma Cell Line	HeLa-S3_Cervical_Carcinoma	CERVIX	CellLine	n/a	Female
+E118	ENCODE2012	#000000	LIV.HEPG2.CNCR	1	HepG2 Hepatocellular Carcinoma Cell Line	HepG2_Hepatocellular_Carcinoma	LIVER	CellLine	n/a	Male
+E119	ENCODE2012	#000000	BRST.HMEC	1	HMEC Mammary Epithelial Primary Cells	HMEC_Mammary_Epithelial	BREAST	PrimaryCulture	n/a	Unknown
+E120	ENCODE2012	#000000	MUS.HSMM	1	HSMM Skeletal Muscle Myoblasts Cells	HSMM_Skeletal_Muscle_Myoblasts	MUSCLE	PrimaryCulture	n/a	Unknown
+E122	ENCODE2012	#000000	VAS.HUVEC	0	HUVEC Umbilical Vein Endothelial Primary Cells	HUVEC_Umbilical_Vein_Endothelial_Cells	VASCULAR	PrimaryCulture	n/a	Unknown
+E123	ENCODE2012	#000000	BLD.K562.CNCR	1	K562 Leukemia Cells	K562_Leukemia	BLOOD	PrimaryCulture	n/a	Female
+E127	ENCODE2012	#000000	SKIN.NHEK	1	NHEK-Epidermal Keratinocyte Primary Cells	NHEK-Epidermal_Keratinocytes	SKIN	PrimaryCulture	n/a	Unknown
+E128	ENCODE2012	#000000	LNG.NHLF	1	NHLF Lung Fibroblast Primary Cells	NHLF_Lung_Fibroblasts	LUNG	PrimaryCulture	n/a	Unknown
