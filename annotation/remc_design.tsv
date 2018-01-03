@@ -1,25 +1,25 @@
-EID	sex_Male	sex_Female	sex_Other	biotype_CellLine	biotype_ESCDerived	biotype_PrimaryCell	biotype_PrimaryCulture	biotype_PrimaryTissue	anatomy_BLOOD	anatomy_BREAST	anatomy_CERVIX	anatomy_ESC	anatomy_ESC_DERIVED	anatomy_GI_INTESTINE	anatomy_GI_STOMACH	anatomy_LIVER	anatomy_LUNG	anatomy_MUSCLE	anatomy_OVARY	anatomy_SKIN	anatomy_VASCULAR
-E003	1	0	0	0	0	0	1	0	0	0	0	1	0	0	0	0	0	0	0	0	0
-E004	1	0	0	0	1	0	0	0	0	0	0	0	1	0	0	0	0	0	0	0	0
-E005	1	0	0	0	1	0	0	0	0	0	0	0	1	0	0	0	0	0	0	0	0
-E006	1	0	0	0	1	0	0	0	0	0	0	0	1	0	0	0	0	0	0	0	0
-E007	1	0	0	0	1	0	0	0	0	0	0	0	1	0	0	0	0	0	0	0	0
-E050	0	0	1	0	0	1	0	0	1	0	0	0	0	0	0	0	0	0	0	0	0
-E055	1	0	0	0	0	0	1	0	0	0	0	0	0	0	0	0	0	0	0	1	0
-E056	1	0	0	0	0	0	1	0	0	0	0	0	0	0	0	0	0	0	0	1	0
-E059	1	0	0	0	0	0	1	0	0	0	0	0	0	0	0	0	0	0	0	1	0
-E084	1	0	0	0	0	0	0	1	0	0	0	0	0	1	0	0	0	0	0	0	0
-E085	1	0	0	0	0	0	0	1	0	0	0	0	0	1	0	0	0	0	0	0	0
-E094	1	0	0	0	0	0	0	1	0	0	0	0	0	0	1	0	0	0	0	0	0
-E097	0	1	0	0	0	0	0	1	0	0	0	0	0	0	0	0	0	0	1	0	0
-E100	1	0	0	0	0	0	0	1	0	0	0	0	0	0	0	0	0	1	0	0	0
-E109	1	0	0	0	0	0	0	1	0	0	0	0	0	1	0	0	0	0	0	0	0
-E116	0	1	0	0	0	0	1	0	1	0	0	0	0	0	0	0	0	0	0	0	0
-E117	0	1	0	1	0	0	0	0	0	0	1	0	0	0	0	0	0	0	0	0	0
-E118	1	0	0	1	0	0	0	0	0	0	0	0	0	0	0	1	0	0	0	0	0
-E119	0	0	1	0	0	0	1	0	0	1	0	0	0	0	0	0	0	0	0	0	0
-E120	0	0	1	0	0	0	1	0	0	0	0	0	0	0	0	0	0	1	0	0	0
-E122	0	0	1	0	0	0	1	0	0	0	0	0	0	0	0	0	0	0	0	0	1
-E123	0	1	0	0	0	0	1	0	1	0	0	0	0	0	0	0	0	0	0	0	0
-E127	0	0	1	0	0	0	1	0	0	0	0	0	0	0	0	0	0	0	0	1	0
-E128	0	0	1	0	0	0	1	0	0	0	0	0	0	0	0	0	1	0	0	0	0
+EID	sex_Male	sex_Female	sex_Other	cancer	biotype_CellLine	biotype_ESCDerived	biotype_PrimaryCell	biotype_PrimaryCulture	biotype_PrimaryTissue	anatomy_BLOOD	anatomy_BREAST	anatomy_CERVIX	anatomy_ESC	anatomy_ESC_DERIVED	anatomy_GI_INTESTINE	anatomy_GI_STOMACH	anatomy_LIVER	anatomy_LUNG	anatomy_MUSCLE	anatomy_OVARY	anatomy_SKIN	anatomy_VASCULAR
+E003	1	0	0	0	0	0	0	1	0	0	0	0	1	0	0	0	0	0	0	0	0	0
+E004	1	0	0	0	0	1	0	0	0	0	0	0	0	1	0	0	0	0	0	0	0	0
+E005	1	0	0	0	0	1	0	0	0	0	0	0	0	1	0	0	0	0	0	0	0	0
+E006	1	0	0	0	0	1	0	0	0	0	0	0	0	1	0	0	0	0	0	0	0	0
+E007	1	0	0	0	0	1	0	0	0	0	0	0	0	1	0	0	0	0	0	0	0	0
+E050	0	0	1	0	0	0	1	0	0	1	0	0	0	0	0	0	0	0	0	0	0	0
+E055	1	0	0	0	0	0	0	1	0	0	0	0	0	0	0	0	0	0	0	0	1	0
+E056	1	0	0	0	0	0	0	1	0	0	0	0	0	0	0	0	0	0	0	0	1	0
+E059	1	0	0	0	0	0	0	1	0	0	0	0	0	0	0	0	0	0	0	0	1	0
+E084	1	0	0	0	0	0	0	0	1	0	0	0	0	0	1	0	0	0	0	0	0	0
+E085	1	0	0	0	0	0	0	0	1	0	0	0	0	0	1	0	0	0	0	0	0	0
+E094	1	0	0	0	0	0	0	0	1	0	0	0	0	0	0	1	0	0	0	0	0	0
+E097	0	1	0	0	0	0	0	0	1	0	0	0	0	0	0	0	0	0	0	1	0	0
+E100	1	0	0	0	0	0	0	0	1	0	0	0	0	0	0	0	0	0	1	0	0	0
+E109	1	0	0	0	0	0	0	0	1	0	0	0	0	0	1	0	0	0	0	0	0	0
+E116	0	1	0	0	0	0	0	1	0	1	0	0	0	0	0	0	0	0	0	0	0	0
+E117	0	1	0	1	1	0	0	0	0	0	0	1	0	0	0	0	0	0	0	0	0	0
+E118	1	0	0	1	1	0	0	0	0	0	0	0	0	0	0	0	1	0	0	0	0	0
+E119	0	0	1	0	0	0	0	1	0	0	1	0	0	0	0	0	0	0	0	0	0	0
+E120	0	0	1	0	0	0	0	1	0	0	0	0	0	0	0	0	0	0	1	0	0	0
+E122	0	0	1	0	0	0	0	1	0	0	0	0	0	0	0	0	0	0	0	0	0	1
+E123	0	1	0	1	0	0	0	1	0	1	0	0	0	0	0	0	0	0	0	0	0	0
+E127	0	0	1	0	0	0	0	1	0	0	0	0	0	0	0	0	0	0	0	0	1	0
+E128	0	0	1	0	0	0	0	1	0	0	0	0	0	0	0	0	0	1	0	0	0	0
