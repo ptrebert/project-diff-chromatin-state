@@ -1,0 +1,32 @@
+name: statediff
+channels:
+  - conda-forge
+  - bioconda
+dependencies:
+  - python=3.6.*
+  - openssl>=1.0.2k
+  - curl
+  - conda-forge::readline
+  - pytz
+  - openblas
+  - numpy=1.13.1
+  - scipy=1.0
+  - scikit-learn=0.19.0
+  - numexpr=2.6.2
+  - hdf5=1.8.17
+  - pandas=0.20.3
+  - statsmodels=0.8.0
+  - pytables=3.4.2
+  - boost=1.64.0
+  - chromhmm=1.12
+  - java-jdk=8.0.92
+  - sambamba=0.6.6
+  - bedtools=2.26.0
+  - mpmath=0.19
+  - salmon=0.9.1
+  - r-empiricalfdr.deseq2=1.0.3
+  - bioconductor-deseq2=1.18.1
+  - bioconductor-tximport=1.6.0
+  - r-readr=1.1.1
+  - r-getopt=1.20.0
+  - matplotlib=2.0.2
