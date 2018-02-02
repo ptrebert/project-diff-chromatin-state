@@ -27,6 +27,9 @@ def parse_command_line():
     parser.add_argument('--pv-threshold', '-pv', type=float, default=0.01, dest='pvthreshold',
                         help='Specify p-value threshold (corrected for multiple testing)'
                              ' to select differentially expressed genes. Default: 0.01')
+    parser.add_argument('--select-chroms', '-slc', type=str, default='chr[0-9X]+', dest='selectchroms',
+                        help='Specify regular expression to select chromosomes to dump to file.'
+                             ' Default: chr[0-9X]+ (autosomes and chrX)')
     args = parser.parse_args()
     return args
 
@@ -91,7 +94,7 @@ def read_annotation(fpath):
     return body_ann, prom_ann
 
 
-def dump_genes_to_file(fpath, genes, locations):
+def dump_genes_to_file(fpath, genes, locations, chrom_re):
     """
     :param fpath:
     :param genes:
@@ -104,6 +107,8 @@ def dump_genes_to_file(fpath, genes, locations):
     dump.sort_values(by=['chrom', 'start', 'end'], inplace=True)
     dump = dump[['chrom', 'start', 'end', 'geneid', 'lfc', 'strand', 'symbol', 'padj']]
     dump.columns = ['chrom', 'start', 'end', 'name', 'log2fc', 'strand', 'symbol', 'pv_adj']
+    select_chrom = dump['chrom'].str.match(chrom_re, as_indexer=True)
+    dump = dump.loc[select_chrom, :]
     with open(fpath, 'w') as bedfile:
         _ = bedfile.write('#')
         dump.to_csv(bedfile, sep='\t', header=True, index=False)
@@ -129,14 +134,14 @@ def main():
     base_out = os.path.join(cargs.outroot, base_out[0])
 
     dump_de_bodies = base_out + cargs.diffout + '_body.bed'
-    dump_genes_to_file(dump_de_bodies, de_genes, bodies)
+    dump_genes_to_file(dump_de_bodies, de_genes, bodies, cargs.selectchroms)
     dump_de_promoters = base_out + cargs.diffout + '_promoter.bed'
-    dump_genes_to_file(dump_de_promoters, de_genes, promoters)
+    dump_genes_to_file(dump_de_promoters, de_genes, promoters, cargs.selectchroms)
 
     dump_nm_bodies = base_out + cargs.normout + '_body.bed'
-    dump_genes_to_file(dump_nm_bodies, nm_genes, bodies)
+    dump_genes_to_file(dump_nm_bodies, nm_genes, bodies, cargs.selectchroms)
     dump_nm_promoters = base_out + cargs.normout + '_promoter.bed'
-    dump_genes_to_file(dump_nm_promoters, nm_genes, promoters)
+    dump_genes_to_file(dump_nm_promoters, nm_genes, promoters, cargs.selectchroms)
 
     return
 
