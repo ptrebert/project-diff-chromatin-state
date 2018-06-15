@@ -24,6 +24,38 @@ used for ROADMAP Epigenomics data:
 
 ftp://ftp.ensembl.org/pub/release-65/regulation/homo_sapiens/RegulatoryFeatures_MultiCell.gff.gz
 
+## ENCODE data
+
+#### Experiment ENCSR000EDV
+- Snyder lab, EP300 in HepG2, hg38
+- peak set: optimal idr thresholded peaks 
+- URL: https://www.encodeproject.org/files/ENCFF806JJS/@@download/ENCFF806JJS.bed.gz
+
+#### Experiment ENCSR000BLW
+- Myers lab, EP300 in HepG2, hg38
+- peak set: optimal idr thresholded peaks
+- URL: https://www.encodeproject.org/files/ENCFF674QCU/@@download/ENCFF674QCU.bed.gz
+
+#### Merging of peak files
+
+Print to single file:
+
+```
+gunzip -c ENCFF* | sort -V -k1,3 > ENCODE_HepG2_EP300_peaks_ovl.bed
+```
+
+Merge overlapping peaks:
+
+```
+bedtools merge -i ENCODE_HepG2_EP300_peaks_ovl.bed -c 5,7,8,9,10 -prec 4 -o max,mean,max,mean,mean > ENCODE_HepG2_EP300_peaks.bed
+```
+
+Restrict to relevant chromosomes:
+
+```
+egrep "chr[0-9X]+\s" ENCODE_HepG2_EP300_peaks.bed > ENCODE_HepG2_EP300_peaks_1-22X.bed
+```
+
 ## Misc annotation
 
 Not important for project - used to reproduce some results from papers
