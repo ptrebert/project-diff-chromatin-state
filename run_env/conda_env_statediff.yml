@@ -34,5 +34,5 @@ dependencies:
   - matplotlib=2.0.2
   - kfoots=1.0
   - epicseg=1.0
-  - pepr=1.1.18
+  - pepr=1.1.24
   - ucsc-bedgraphtobigwig
