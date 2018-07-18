@@ -92,9 +92,18 @@ write.table(as.data.frame(res_hg_vs_ma),
             paste(cmd_opts$outpath, 'deseq2_HG_vs_Ma.tsv', sep='/'),
             col.names=TRUE, row.names=TRUE, sep="\t", quote=FALSE)
 
-res_mo_vs_ma = results(dds, contrast=c('celltype', 'Ma', 'Mo'))
+res_mo_vs_ma = results(dds, contrast=c('celltype', 'Mo', 'Ma'))
 write.table(as.data.frame(res_mo_vs_ma),
-            paste(cmd_opts$outpath, 'deseq2_Ma_vs_Mo.tsv', sep='/'),
+            paste(cmd_opts$outpath, 'deseq2_Mo_vs_Ma.tsv', sep='/'),
+            col.names=TRUE, row.names=TRUE, sep="\t", quote=FALSE)
+
+dds = DESeqDataSetFromTximport(txi, smp_ann, ~ organ)
+
+dds = DESeq(dds)
+
+res_li_vs_bl = results(dds, contrast=c('organ', 'Li', 'Bl'))
+write.table(as.data.frame(res_li_vs_bl),
+            paste(cmd_opts$outpath, 'deseq2_Liver_vs_Blood.tsv', sep='/'),
             col.names=TRUE, row.names=TRUE, sep="\t", quote=FALSE)
 
 quit(save="no", status=0)
