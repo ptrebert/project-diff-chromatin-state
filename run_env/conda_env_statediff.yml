@@ -29,10 +29,16 @@ dependencies:
   - r-empiricalfdr.deseq2=1.0.3
   - bioconductor-deseq2=1.18.1
   - bioconductor-tximport=1.6.0
+  - bioconductor-genomicfeatures=1.30.*
   - r-readr=1.1.1
   - r-getopt=1.20.0
   - matplotlib=2.0.2
+  - matplotlib-venn=0.11.5
   - kfoots=1.0
   - epicseg=1.0
-  - pepr=1.1.24
+#  - pepr=1.1.24  # still some issues with Python3 support
   - ucsc-bedgraphtobigwig
+  - xlrd=1.1.0
+# RGT still does not fully support Python3...
+#  - pip:
+#      - RGT

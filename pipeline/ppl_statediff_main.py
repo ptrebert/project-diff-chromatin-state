@@ -6,6 +6,7 @@ import csv as csv
 import operator as op
 import collections as col
 import itertools as itt
+import time as ti
 
 from ruffus import *
 
@@ -270,9 +271,9 @@ def make_pepr_diff_params(inputfolder, outputfolder, subset, cmd, jobcall):
     """
     peaktypes = {'H3K27me3': 'broad', 'H3K9me3': 'broad', 'H3K36me3': 'broad'}
     comparisons = [('HG', 'He'), ('HG', 'Ma'), ('HG', 'Mo'),
-                   ('He', 'Ma'), ('He', 'Mo'), ('Ma', 'Mo')]
+                   ('He', 'Ma'), ('He', 'Mo'), ('Mo', 'Ma')]
     marks = dict((t[0], col.defaultdict(list)) for t in comparisons)
-    marks['Mo'] = col.defaultdict(list)
+    marks['Ma'] = col.defaultdict(list)
     bam_input = col.defaultdict(list)
     for fn in os.listdir(inputfolder):
         if fn.endswith('.bam'):
@@ -302,6 +303,74 @@ def make_pepr_diff_params(inputfolder, outputfolder, subset, cmd, jobcall):
             outputfile = '{}_vs_{}_{}__PePr_parameters.txt'.format(g1, g2, lib)
             outpath = os.path.join(out_dir, outputfile)
             args.append([inputfiles, outpath, tmp, jobcall])
+    return args
+
+
+def make_thor_diff_params(inputfolder, outputfolder, subset, cmd, jobcall):
+    """
+    :param inputfolder:
+    :param outputfolder:
+    :param subset:
+    :param cmd:
+    :param jobcall:
+    :return:
+    """
+
+    raw_cfg = """#rep1
+            {sample1_mark}
+            #rep2
+            {sample2_mark}
+            #genome
+            /TL/deep/fhgfs/projects/pebert/thesis/refdata/rgtdata/hg38/genome_hg38.fa
+            #chrom_sizes
+            /TL/deep/fhgfs/projects/pebert/thesis/refdata/rgtdata/hg38/chrom.sizes.hg38
+            #inputs1
+            {sample1_input}
+            #inputs2
+            {sample2_input}
+            """
+    raw_cfg = raw_cfg.replace(' ', '')
+    config_folder = os.path.join(os.path.split(outputfolder)[0], 'run_configs')
+    os.makedirs(config_folder, exist_ok=True)
+    comparisons = [('HG', 'He'), ('HG', 'Ma'), ('HG', 'Mo'),
+                   ('He', 'Ma'), ('He', 'Mo'), ('Ma', 'Mo')]
+    marks = dict((t[0], col.defaultdict(list)) for t in comparisons)
+    marks['Mo'] = col.defaultdict(list)
+    bam_input = col.defaultdict(list)
+    for fn in os.listdir(inputfolder):
+        if fn.endswith('.bam'):
+            sid, lib, _, _ = fn.rsplit('_', 3)
+            if sid in subset:
+                celltype = sid[10:12]
+                if lib == 'Input':
+                    bam_input[celltype].append(os.path.join(inputfolder, fn))
+                else:
+                    marks[celltype][lib].append(os.path.join(inputfolder, fn))
+    args = []
+    for g1, g2 in comparisons:
+        g1_marks = marks[g1]
+        g2_marks = marks[g2]
+        inputs1 = '\n'.join(sorted(bam_input[g1]))
+        inputs2 = '\n'.join(sorted(bam_input[g2]))
+        out_dir = os.path.join(outputfolder, '{}_vs_{}'.format(g1, g2))
+        if not os.path.isdir(out_dir):
+            os.makedirs(out_dir)
+        for lib, files1 in g1_marks.items():
+            files2 = g2_marks[lib]
+            run_name = '{}_vs_{}_{}'.format(g1, g2, lib)
+            cfg = {'sample1_mark': '\n'.join(sorted(files1)), 'sample2_mark': '\n'.join(sorted(files2)),
+                   'sample1_input': inputs1, 'sample2_input': inputs2}
+            tmp_cfg = raw_cfg.format(**cfg)
+            cfg_path = os.path.join(config_folder, run_name + '.thor.cfg')
+
+            with open(cfg_path, 'w') as dump:
+                _ = dump.write(tmp_cfg)
+
+            cmd_opt = {'outputdir': out_dir, 'name': run_name}
+            tmp = cmd.format(**cmd_opt)
+            outputfile = run_name + '-setup.info'
+            outpath = os.path.join(out_dir, outputfile)
+            args.append([cfg_path, outpath, tmp, jobcall])
     return args
 
 
@@ -351,7 +420,7 @@ def filter_sort_pepr_peaks(inputfile, outputfile):
         peakfile = inputfile.replace('post-peak1.chk', 'chip1_peaks.bed.passed')
     else:
         peakfile = inputfile.replace('post-peak2.chk', 'chip2_peaks.bed.passed')
-    header = ['chrom', 'start', 'end', 'name', 'score',
+    header = ['chrom', 'start', 'end', 'name', 'foldChange',
               'strand', 'signalValue', 'pvalue', 'qvalue']
     recs = []
     with open(peakfile, 'r', newline='') as peaks:
@@ -368,9 +437,11 @@ def filter_sort_pepr_peaks(inputfile, outputfile):
     pct25 = int(total_peaks * 0.25)
     pct10_len = peak_lens[:pct10][-1]
     pct25_len = peak_lens[:pct25][-1]
-    with open(outputfile, 'w', newline='') as filtered:
+    with open(outputfile, 'w', encoding='utf-8', newline='') as filtered:
         _ = filtered.write('#')
-        writer = csv.DictWriter(filtered, delimiter='\t', fieldnames=header)
+        writer = csv.DictWriter(filtered, delimiter='\t',
+                                fieldnames=header, dialect='unix',
+                                quoting=csv.QUOTE_NONE)
         writer.writeheader()
         writer.writerows(recs)
     statfile = outputfile.replace('sig.bed', 'stat.txt')
@@ -382,11 +453,12 @@ def filter_sort_pepr_peaks(inputfile, outputfile):
     return outputfile
 
 
-def make_sciddo_scan_params(inputfolder, sub_folder, groups, cmd, jobcall):
+def make_sciddo_scan_params(inputfolder, sub_folder, groups, scorings, cmd, jobcall):
     """
     :param inputfolder:
     :param sub_folder:
     :param groups:
+    :param scorings:
     :param cmd:
     :param jobcall:
     :return:
@@ -397,14 +469,24 @@ def make_sciddo_scan_params(inputfolder, sub_folder, groups, cmd, jobcall):
             continue
         if data:
             for fn in data:
-                if fn.endswith('.h5') and fn.startswith('deep_sciddo_'):
+                if fn.endswith('.h5') and fn.startswith('sciddo-data_'):
                     in_path = os.path.join(root, fn)
                     out_dir = os.path.join(root, sub_folder)
                     os.makedirs(out_dir, exist_ok=True)
-                    outfile = fn.replace('_sciddo_', '_hsp_')
+                    outfile = fn.replace('sciddo-data_', 'sciddo-run_')
                     for g1, g2 in itt.combinations(groups, 2):
-                        tmp = cmd.format(**{'grp1': g1, 'grp2': g2})
-                        out_tmp = outfile.replace('.h5', '_' + g1 + '_vs_' + g2 + '.h5')
+                        for s in scorings:
+                            c1 = g1.split('_')[1]
+                            c2 = g2.split('_')[1]
+                            tmp = cmd.format(**{'grp1': g1, 'grp2': g2, 'scoring': s})
+                            out_tmp = outfile.replace('.h5', '_' + s + '_' + c1 + '_vs_' + c2 + '.h5')
+                            out_path = os.path.join(out_dir, out_tmp)
+                            args.append([in_path, out_path, tmp, jobcall])
+                    for s in scorings:
+                        g1 = 'TISSUE_Li'
+                        g2 = 'TISSUE_Bl'
+                        tmp = cmd.format(**{'grp1': g1, 'grp2': g2, 'scoring': s})
+                        out_tmp = outfile.replace('.h5', '_' + s + '_Liver_vs_Blood.h5')
                         out_path = os.path.join(out_dir, out_tmp)
                         args.append([in_path, out_path, tmp, jobcall])
     return args
@@ -452,38 +534,206 @@ def make_btools_all_intersect(inputroot, outroot, datatype, cmd, jobcall):
                   (1, 1, 0): 'ident_ident_diff', (0, 1, 0): 'diff_ident_diff'}
     for folder in subfolders.values():
         os.makedirs(os.path.join(outroot, folder), exist_ok=True)
-    # deep_hg38_cmm18_HG_vs_He_hsp-emission.bed
-    match_info = re.compile("deep_hg38_(?P<SEGMENT>[a-z0-9]+)_(?P<COMP>\w+)_(?P<DATA>(hsp|raw))-(?P<SCORING>[a-z]+)\.bed")
+    # cmm18_hg38_He_vs_Ma_ordem_raw-t1.bed
+    match_info = re.compile("(?P<SEGMENT>[a-z0-9]+)_hg38_(?P<COMP>\w+)_(?P<SCORING>[pordemn]+)_(?P<DATA>(hsp|raw)\-t[10]+)\.bed")
     inputfiles = []
     for root, dirs, datafiles in os.walk(inputroot):
-        if root.endswith('data_dump') and datafiles:
+        if datafiles and 'data_dump' in root:
             for bf in datafiles:
-                if bf.endswith('.bed') and ('_hsp-' in bf or '_raw-' in bf):
-                    inputfiles.append(os.path.join(root, bf))
+                mobj = match_info.match(bf)
+                if mobj is not None:
+                    if mobj.group('DATA') == datatype:
+                        inputfiles.append((os.path.join(root, bf), mobj))
     args = []
-    for b1, b2 in itt.combinations_with_replacement(sorted(inputfiles), 2):
-        bn1, bn2 = os.path.basename(b1), os.path.basename(b2)
-        b1_info = match_info.match(bn1)
-        assert b1_info is not None, 'Could not match {}'.format(bn1)
-        if b1_info.group('DATA') != datatype:
-            continue
-        b2_info = match_info.match(bn2)
-        if b2_info.group('DATA') != datatype:
-            continue
-        outname = '{}-{}-{}-ovl-{}-{}-{}.tsv'.format(b1_info.group('SEGMENT'),
-                                                     b1_info.group('COMP'),
-                                                     b1_info.group('SCORING'),
-                                                     b2_info.group('SEGMENT'),
-                                                     b2_info.group('COMP'),
-                                                     b2_info.group('SCORING'))
+    for b1, b2 in itt.permutations(sorted(inputfiles), 2):
+        b1_path = b1[0]
+        b2_path = b2[0]
+        b1_info = b1[1]
+        b2_info = b2[1]
+        outname = '{}-{}-{}-ovl-{}-{}-{}_{}.tsv'.format(b1_info.group('SEGMENT'),
+                                                        b1_info.group('COMP'),
+                                                        b1_info.group('SCORING'),
+                                                        b2_info.group('SEGMENT'),
+                                                        b2_info.group('COMP'),
+                                                        b2_info.group('SCORING'),
+                                                        datatype)
 
         a = int(b1_info.group('SEGMENT') == b2_info.group('SEGMENT'))
         b = int(b1_info.group('COMP') == b2_info.group('COMP'))
         c = int(b1_info.group('SCORING') == b2_info.group('SCORING'))
+        if c == 0:
+            # skip over different scorings
+            continue
+        seg1, seg2 = b1_info.group('SEGMENT'), b2_info.group('SEGMENT')
+        if (seg1, seg2) in [('cmm18', 'ecs10'), ('ecs10', 'cmm18')]:
+            continue
         subfolder = subfolders[(a, b, c)]
         outpath = os.path.join(outroot, subfolder, outname)
-        args.append([[b1, b2], outpath, cmd, jobcall])
+        args.append([[b1_path, b2_path], outpath, cmd, jobcall])
     return args
+
+
+def make_btools_hsp_pepr_isect(hsp_root, pepr_root, deseq_root, regtype, condition, outroot, cmd, jobcall):
+    """
+    :return:
+    """
+    args = []
+    genes_raw = os.path.join(deseq_root, 'deseq2_{}_{}_{}.bed')
+    for root, dirs, dumpfile in os.walk(hsp_root):
+        if root.endswith('data_dump'):
+            hspfiles = [f for f in dumpfile if '_hsp-' in f and f.endswith('.bed')]
+            for hsp in hspfiles:
+                peakfiles = []
+                # deep_hg38_cmm18_HG_vs_Mo_hsp-emission.bed
+                parts = hsp.split('.')[0].split('_')
+                seg = parts[2]
+                comp = parts[3] + '_vs_' + parts[5]
+                score = parts[-1].split('-')[-1]
+                chip_lut = {'chip1': parts[3], 'chip2': parts[5]}
+                pepr_folder = os.path.join(pepr_root, comp)
+                pepr_files = os.listdir(pepr_folder)
+                pepr_files = [f for f in pepr_files if f.endswith('peak.sig.bed')]
+                for pf in pepr_files:
+                    id_parts = pf.split('_')
+                    mark = id_parts[3]
+                    cell = chip_lut[id_parts[6]]
+                    file_label = cell + '-' + mark
+                    file_path = os.path.join(pepr_folder, pf)
+                    peakfiles.append((file_label, file_path))
+                peakfiles = sorted(peakfiles)
+                isect_labels = ['HSP'] + [t[0] for t in peakfiles]
+                isect_paths = [os.path.join(root, hsp)] + [t[1] for t in peakfiles]
+                genefile = genes_raw.format(comp, condition, regtype)
+                outfile = '{}-genes_{}_hsp_pepr_{}_{}_{}.tsv'.format(condition, regtype, seg, comp, score)
+                outpath = os.path.join(outroot, outfile)
+                tmp = cmd.format(**{'isect_files': ' '.join(isect_paths),
+                                    'isect_labels': ' '.join(isect_labels)})
+                args.append([genefile, outpath, tmp, jobcall])
+    return args
+
+
+def make_invert_intersect_params(gene_root, enhancer_file, sciddo_root, out_folder, cmd, jobcall):
+    """
+    Inverse intersection - intersect genes/enhancers with HSPs
+    to see how HSP hits alter gene expression patterns
+
+    :param gene_root: folder with DeSeq2 output files
+    :param enhancer_file:
+    :param sciddo_root: root for HSP dumps
+    :param out_folder:
+    :param cmd:
+    :param jobcall:
+    :return:
+    """
+    args = []
+    for gene_file in os.listdir(gene_root):
+        if not gene_file.endswith('_body.bed'):
+            continue
+        gene_path = os.path.join(gene_root, gene_file)
+        parts = gene_file.split('_')
+        comp = '_vs_'.join([parts[1], parts[3]])
+        gene_type = parts[4]
+
+        for root, dirs, data_files in os.walk(sciddo_root):
+            if root.endswith('data_dump'):
+                hsp_files = [f for f in data_files if '_hsp-' in f and f.endswith('.bed') and comp in f]
+                for f in hsp_files:
+                    hsp_path = os.path.join(root, f)
+                    seg = f.split('_')[2]
+                    scoring = f.split('.')[0].split('-')[-1]
+                    gene_prefix = 'st'
+                    if gene_type == 'diff':
+                        gene_prefix = 'de'
+                        infile1 = enhancer_file
+                        infile2 = hsp_path
+                        outfile = 'deep_enh_ovl_hsp_{}_{}_{}.tsv'.format(seg, comp, scoring)
+                        outpath = os.path.join(out_folder, outfile)
+                        tmp = str(cmd)
+                        args.append([(infile1, infile2), outpath, tmp, jobcall])
+                    infile1 = gene_path
+                    infile2 = hsp_path
+                    outfile = 'deep_{}genes_ovl_hsp_{}_{}_{}.tsv'.format(gene_prefix, seg, comp, scoring)
+                    outpath = os.path.join(out_folder, outfile)
+                    tmp = str(cmd)
+                    args.append([(infile1, infile2), outpath, tmp, jobcall])
+
+    return args
+
+
+def make_pepr_any_intersect_params(gene_root, enhancer_file, pepr_root, out_folder, cmd, jobcall):
+    """
+    Inverse intersection - intersect genes/enhancers with HSPs
+    to see how HSP hits alter gene expression patterns
+
+    :param gene_root: folder with DeSeq2 output files
+    :param enhancer_file:
+    :param pepr_root: root for PePr peak files
+    :param out_folder:
+    :param cmd:
+    :param jobcall:
+    :return:
+    """
+    args = []
+    use_marks = ['H3K27ac', 'H3K4me3', 'H3K36me3']
+    for gene_file in os.listdir(gene_root):
+        if gene_file.endswith('locus.bed'):
+            continue
+        if '_all_' not in gene_file:
+            continue
+        gene_path = os.path.join(gene_root, gene_file)
+        region = gene_file.split('.')[0].split('_')[-1]
+
+        parts = gene_file.split('_')
+        s1, s2 = parts[1], parts[3]
+        sample_lut = {'chip1': s1, 'chip2': s2}
+        comp = '_vs_'.join([s1, s2])
+
+        done_peaks = set()
+        for root, dirs, data_files in os.walk(pepr_root):
+            if root.endswith(comp):
+                peak_files = [f for f in data_files if f.endswith('.sig.bed')]
+                for p in peak_files:
+                    mark = p.split('_')[3]
+                    if mark not in use_marks:
+                        continue
+                    peak_path = os.path.join(root, p)
+
+                    condition = p.split('_')[5]
+                    if mark == 'H3K27ac':
+                        infile1 = enhancer_file
+                        infile2 = peak_path
+                        outfile = 'enh_ovl_{}-{}_{}.tsv'.format(sample_lut[condition], mark, comp)
+                        if outfile not in done_peaks:
+                            outpath = os.path.join(out_folder, outfile)
+                            tmp = str(cmd)
+                            args.append([(infile1, infile2), outpath, tmp, jobcall])
+                    elif mark == 'H3K4me3' and region == 'promoter':
+                        infile1 = gene_path
+                        infile2 = peak_path
+                        outfile = 'prom_ovl_{}-{}_{}.tsv'.format(sample_lut[condition], mark, comp)
+                        if outfile not in done_peaks:
+                            outpath = os.path.join(out_folder, outfile)
+                            tmp = str(cmd)
+                            args.append([(infile1, infile2), outpath, tmp, jobcall])
+                    elif mark == 'H3K36me3' and region == 'body':
+                        infile1 = gene_path
+                        infile2 = peak_path
+                        outfile = 'gene_ovl_{}-{}_{}.tsv'.format(sample_lut[condition], mark, comp)
+                        if outfile not in done_peaks:
+                            outpath = os.path.join(out_folder, outfile)
+                            tmp = str(cmd)
+                            args.append([(infile1, infile2), outpath, tmp, jobcall])
+                    else:
+                        pass
+    return args
+
+
+def touch_checkfile(inputfiles, outputfile):
+
+    with open(outputfile, 'w') as checkfile:
+        _ = checkfile.write(ti.ctime() + '\n\n')
+        _ = checkfile.write('\n'.join(sorted(inputfiles)) + '\n')
+    return outputfile
 
 
 def build_pipeline(args, config, sci_obj, pipe):
@@ -599,6 +849,25 @@ def build_pipeline(args, config, sci_obj, pipe):
                                 extras=[tmp_mkseg_deep, jobcall])
     cmm_deep_mkseg = cmm_deep_mkseg.mkdir(cmm_deep_segmentation)
 
+    sci_obj.set_config_env(dict(config.items('NodeJobConfig')), dict(config.items('EnvConfig')))
+    if args.gridmode:
+        jobcall = sci_obj.ruffus_gridjob()
+    else:
+        jobcall = sci_obj.ruffus_localjob()
+
+    # learn a new ChromHMM 18-state model just on the DEEP data to potentially
+    # check for differences in the segmentations and state emissions
+
+    cmd = config.get('Pipeline', 'cmm_learn')
+    cmm_deep_learn = pipe.transform(task_func=sci_obj.get_jobf('in_out'),
+                                    name='cmm_deep_learn',
+                                    input=output_from(cmm_deep_sheet),
+                                    filter=formatter(),
+                                    output='{path[0]}/cmm_deep_learn.chk',
+                                    extras=[cmd, jobcall])
+    cmm_deep_learn = cmm_deep_learn.follows(cmm_deep_binbam)
+    cmm_deep_learn = cmm_deep_learn.mkdir(cmm_deep_folder, 'test_new18')
+
     sci_obj.set_config_env(dict(config.items('ParallelJobConfig')), dict(config.items('EnvConfig')))
     if args.gridmode:
         jobcall = sci_obj.ruffus_gridjob()
@@ -657,12 +926,12 @@ def build_pipeline(args, config, sci_obj, pipe):
     zerone_deep_peaks = zerone_deep_peaks.follows(bam_qfilter_deep)
 
     # =====================================================================
-    # Differential peak calling with replicates
+    # Differential peak calling with replicates (PePr)
     # Set folder for DEEP samples
     pepr_deep_folder = os.path.join(workdir, 'pepr', 'deep')
     pepr_deep_output = os.path.join(pepr_deep_folder, 'diff_out')
 
-    sci_obj.set_config_env(dict(config.items('MemJobConfig')), dict(config.items('Py2EnvConfig')))
+    sci_obj.set_config_env(dict(config.items('MemJobConfig')), dict(config.items('EnvConfig')))
     if args.gridmode:
         jobcall = sci_obj.ruffus_gridjob()
     else:
@@ -685,14 +954,55 @@ def build_pipeline(args, config, sci_obj, pipe):
                                 name='pepr_deep_post')
     pepr_deep_post = pepr_deep_post.follows(pepr_deep_diff)
 
+    cmd = config.get('Pipeline', 'pkuniq12_pepr')
+    pepr_peak12_uniq = pipe.transform(task_func=sci_obj.get_jobf('in_out'),
+                                      name='pepr_peak12_uniq',
+                                      input=output_from(pepr_deep_post),
+                                      filter=formatter('(?P<SAMPLEID>\w+)__PePr_post\-peak1\.chk'),
+                                      output=os.path.join('{path[0]}', '{SAMPLEID[0]}_PePr_chip1_peaks.uniq.bed'),
+                                      extras=[cmd, jobcall])
+
+    cmd = config.get('Pipeline', 'pkuniq21_pepr')
+    pepr_peak21_uniq = pipe.transform(task_func=sci_obj.get_jobf('in_out'),
+                                      name='pepr_peak21_uniq',
+                                      input=output_from(pepr_deep_post),
+                                      filter=formatter('(?P<SAMPLEID>\w+)__PePr_post\-peak2\.chk'),
+                                      output=os.path.join('{path[0]}', '{SAMPLEID[0]}_PePr_chip2_peaks.uniq.bed'),
+                                      extras=[cmd, jobcall])
+
     # filter "passed" BED files for q-value
-    # Ma_vs_Mo_H3K4me1__PePr_post-peak1.chk
+    # Mo_vs_Ma_H3K4me1__PePr_post-peak1.chk
     pepr_deep_filter = pipe.transform(task_func=filter_sort_pepr_peaks,
                                       name='pepr_deep_filter',
-                                      input=output_from(pepr_deep_post),
-                                      filter=formatter('(?P<SAMPLEID>\w+)__PePr_post\-peak(?P<REP>(1|2))\.chk'),
-                                      output=os.path.join('{path[0]}', '{SAMPLEID[0]}__PePr_chip{REP[0]}_peak.sig.bed'))
+                                      input=output_from(pepr_peak12_uniq, pepr_peak21_uniq),
+                                      filter=formatter('(?P<SAMPLEID>\w+)_PePr_chip(?P<REP>(1|2))_peaks\.uniq\.bed'),
+                                      output=os.path.join('{path[0]}', '{SAMPLEID[0]}_PePr_chip{REP[0]}_peak.sig.bed'))
     pepr_deep_filter = pepr_deep_filter.jobs_limit(4)
+    pepr_deep_filter = pepr_deep_filter.follows(pepr_peak12_uniq)
+    pepr_deep_filter = pepr_deep_filter.follows(pepr_peak21_uniq)
+    
+    # =====================================================================
+    # Differential peak calling with replicates (THOR)
+    # Set folder for DEEP samples
+    thor_deep_folder = os.path.join(workdir, 'thor', 'deep')
+    thor_deep_output = os.path.join(thor_deep_folder, 'diff_out')
+
+    sci_obj.set_config_env(dict(config.items('MemJobConfig')), dict(config.items('Py2EnvConfig')))
+    if args.gridmode:
+        jobcall = sci_obj.ruffus_gridjob()
+    else:
+        jobcall = sci_obj.ruffus_localjob()
+
+    cmd = config.get('Pipeline', 'pkdiff_thor')
+    thor_deep_diff_params = make_thor_diff_params(deep_filtered_output, thor_deep_output,
+                                                  config.get('Pipeline', 'deep_subset'), cmd, jobcall)
+    thor_deep_diff = pipe.files(sci_obj.get_jobf('in_out'),
+                                thor_deep_diff_params,
+                                name='thor_deep_diff')
+    thor_deep_diff = thor_deep_diff.mkdir(thor_deep_folder)
+    thor_deep_diff = thor_deep_diff.follows(bam_qfilter_deep)
+    # there is still a bug in THOR that prevents execution
+    thor_deep_diff = thor_deep_diff.active_if(False)
 
     # =====================================================================
     # Gene expression quantification
@@ -744,6 +1054,8 @@ def build_pipeline(args, config, sci_obj, pipe):
                                     filter=formatter(),
                                     output=[os.path.join(deep_to_bed, '{basename[0]}_diff_body.bed'),
                                             os.path.join(deep_to_bed, '{basename[0]}_diff_promoter.bed')],
+                                            # to keep output as pair, ignore that gene loci are also produced
+                                            #os.path.join(deep_to_bed, '{basename[0]}_diff_locus.bed')],
                                     extras=[cmd, jobcall])
     conv_deep_diff = conv_deep_diff.mkdir(deep_to_bed)
     conv_deep_diff = conv_deep_diff.follows(deseq_deep_diff)
@@ -768,7 +1080,7 @@ def build_pipeline(args, config, sci_obj, pipe):
                                             input=output_from(cmm_deep_mkseg),
                                             filter=formatter('chk$'),
                                             output=os.path.join(sciddo_deep_folder, 'cmm18',
-                                                                'deep_sciddo_hg38_cmm18.conv-chk'),
+                                                                'sciddo-data_hg38_cmm18.conv-chk'),
                                             extras=[cmd, jobcall])
     sciddo_deep_conv_cmm18 = sciddo_deep_conv_cmm18.mkdir(sciddo_deep_folder)
 
@@ -779,7 +1091,7 @@ def build_pipeline(args, config, sci_obj, pipe):
                                           input=output_from(ecs_deep_seg),
                                           filter=formatter('ecs_deep_seg_(?P<STNUM>[0-9]+)\.chk'),
                                           output=os.path.join(sciddo_deep_folder, 'ecs{STNUM[0]}',
-                                                              'deep_sciddo_hg38_ecs{STNUM[0]}.conv-chk'),
+                                                              'sciddo-data_hg38_ecs{STNUM[0]}.conv-chk'),
                                           extras=[cmd, jobcall])
     sciddo_deep_conv_ecs = sciddo_deep_conv_ecs.mkdir(sciddo_deep_folder)
 
@@ -821,30 +1133,26 @@ def build_pipeline(args, config, sci_obj, pipe):
                                       output=os.path.join('{path[0]}', 'baseline_run', '{basename[0]}_baseline.h5'),
                                       extras=[cmd, jobcall])
 
+    cmd = config.get('Pipeline', 'sciddo_deep_smprand')
+    sciddo_deep_smprand = pipe.transform(task_func=sci_obj.get_jobf('in_out'),
+                                         name='sciddo_deep_smprand',
+                                         input=output_from(sciddo_deep_score),
+                                         filter=formatter('score\-chk$'),
+                                         output=os.path.join('{path[0]}', 'baseline_run', '{basename[0]}_smprand.h5'),
+                                         extras=[cmd, jobcall])
+
     # ==============================
     # Scan for differential regions
     # based on cell-type grouping
     cmd = config.get('Pipeline', 'sciddo_deep_scan')
     groups = config.get('Pipeline', 'sciddo_deep_groups').split()
-    sciddo_deep_scan_pub_params = make_sciddo_scan_params(sciddo_deep_folder, 'hsp_run',
-                                                          groups, cmd, jobcall)
+    scorings = config.get('Pipeline', 'use_scorings').split()
+    sciddo_deep_scan_params = make_sciddo_scan_params(sciddo_deep_folder, 'hsp_run',
+                                                      groups, scorings, cmd, jobcall)
     sciddo_deep_scan = pipe.files(sci_obj.get_jobf('in_out'),
-                                  sciddo_deep_scan_pub_params,
+                                  sciddo_deep_scan_params,
                                   name='sciddo_deep_scan')
     sciddo_deep_scan = sciddo_deep_scan.follows(sciddo_deep_score)
-
-    # ============================================
-    # Generate HSP samples by randomized sampling
-    # THIS TAKES AN INSANE AMOUNT OF TIME!
-    cmd = config.get('Pipeline', 'sciddo_deep_smprand')
-    sciddo_deep_smprand = pipe.transform(task_func=sci_obj.get_jobf('in_out'),
-                                         name='sciddo_deep_smprand',
-                                         input=output_from(sciddo_deep_score),
-                                         filter=formatter('scorechk$'),
-                                         output=os.path.join('{path[0]}', 'smp_run', '{basename[0]}_smprand.h5'),
-                                         extras=[cmd, jobcall])
-    sciddo_deep_smprand = sciddo_deep_smprand.active_if(config.getboolean('Pipeline', 'weekend'))
-
     # ================================================================================
     # Dump data for visualization
     # and HSPs
@@ -856,64 +1164,58 @@ def build_pipeline(args, config, sci_obj, pipe):
         jobcall = sci_obj.ruffus_localjob()
 
     # dump fully annotated state segmentations
-    deep_dset_re = 'deep_sciddo_hg38_(?P<SEGMENT>[cmes180]{5})\.conv-chk'
+    deep_dset_re = 'sciddo-data_hg38_(?P<SEGMENT>[cmes180]{5})\.conv-chk'
     cmd = config.get('Pipeline', 'sciddo_deep_dump_seg')
     sciddo_deep_dump_seg = pipe.subdivide(task_func=sci_obj.get_jobf('in_pat'),
                                           name='sciddo_deep_dump_seg',
                                           input=output_from(sciddo_deep_conv_cmm18, sciddo_deep_conv_ecs),
                                           filter=formatter(deep_dset_re),
-                                          output='{path[0]}/data_dump/{SEGMENT[0]}_*.bed',
-                                          extras=['{path[0]}/data_dump', '{SEGMENT[0]}_*.bed', cmd, jobcall])
+                                          output='{path[0]}/data_dump/state_maps/{SEGMENT[0]}_*.bed',
+                                          extras=['{path[0]}/data_dump/state_maps', '{SEGMENT[0]}_*.bed', cmd, jobcall])
 
-    deep_scan_re = 'deep_hsp_hg38_(?P<SEGMENT>[cmes180]{5})_CELLTYPE_(?P<C1>[HGeMoa]{2})_vs_CELLTYPE_(?P<C2>[HGeMoa]{2})\.h5'
+    # Regular expression to match SCIDDO run files
+    deep_scan_re = 'sciddo-run_hg38_(?P<SEGMENT>[cmes180]{5})_(?P<SCORING>[a-z]+)_(?P<C1>[HGeMoaLivr]{2,5})_vs_(?P<C2>[HGeMoaBld]{2,5})\.h5'
 
-    cmd = config.get('Pipeline', 'sciddo_deep_dump_emission')
-    sciddo_deep_dump_emission = pipe.transform(task_func=sci_obj.get_jobf('in_out'),
-                                               name='sciddo_deep_dump_emission',
+    cmd = config.get('Pipeline', 'sciddo_deep_dump_scores')
+    sciddo_deep_dump_scores = pipe.transform(task_func=sci_obj.get_jobf('in_out'),
+                                             name='sciddo_deep_dump_scores',
+                                             input=output_from(sciddo_deep_scan),
+                                             filter=formatter(deep_scan_re),
+                                             output='{subpath[0][1]}/data_dump/score_tracks/{SEGMENT[0]}_hg38_{C1[0]}_vs_{C2[0]}_{SCORING[0]}_scores.bg',
+                                             extras=[cmd, jobcall])
+
+    deep_scan_re_hema = 'sciddo-run_hg38_(?P<SEGMENT>[cm18]{5})_(?P<SCORING>[a-z]+)_(?P<C1>[He]{2,5})_vs_(?P<C2>[Ma]{2,5})\.h5'
+    cmd = config.get('Pipeline', 'sciddo_deep_dump_scores_hema')
+    sciddo_deep_dump_scores_hema = pipe.subdivide(task_func=sci_obj.get_jobf('in_pat'),
+                                                  name='sciddo_deep_dump_scores_hema',
+                                                  input=output_from(sciddo_deep_scan),
+                                                  filter=formatter(deep_scan_re_hema),
+                                                  output='{subpath[0][1]}/data_dump/pw_score_tracks/*-scores.bg',
+                                                  extras=['{subpath[0][1]}/data_dump/pw_score_tracks', '*.bg', cmd, jobcall])
+
+    cmd = config.get('Pipeline', 'sciddo_deep_dump_hsp_t1')
+    sciddo_deep_dump_hsp_t1 = pipe.transform(task_func=sci_obj.get_jobf('in_out'),
+                                             name='sciddo_deep_dump_hsp_t1',
+                                             input=output_from(sciddo_deep_scan),
+                                             filter=formatter(deep_scan_re),
+                                             output='{subpath[0][1]}/data_dump/hsp_t1/{SEGMENT[0]}_hg38_{C1[0]}_vs_{C2[0]}_{SCORING[0]}_hsp-t1.bed',
+                                             extras=[cmd, jobcall])
+
+    cmd = config.get('Pipeline', 'sciddo_deep_dump_hsp_t100')
+    sciddo_deep_dump_hsp_t100 = pipe.transform(task_func=sci_obj.get_jobf('in_out'),
+                                               name='sciddo_deep_dump_hsp_t100',
                                                input=output_from(sciddo_deep_scan),
                                                filter=formatter(deep_scan_re),
-                                               output='{subpath[0][1]}/data_dump/deep_hg38_{SEGMENT[0]}_{C1[0]}_vs_{C2[0]}_emission-scores.bg',
+                                               output='{subpath[0][1]}/data_dump/hsp_t100/{SEGMENT[0]}_hg38_{C1[0]}_vs_{C2[0]}_{SCORING[0]}_hsp-t100.bed',
                                                extras=[cmd, jobcall])
 
-    cmd = config.get('Pipeline', 'sciddo_deep_dump_replicate')
-    sciddo_deep_dump_replicate = pipe.transform(task_func=sci_obj.get_jobf('in_out'),
-                                                name='sciddo_deep_dump_replicate',
-                                                input=output_from(sciddo_deep_scan),
-                                                filter=formatter(deep_scan_re),
-                                                output='{subpath[0][1]}/data_dump/deep_hg38_{SEGMENT[0]}_{C1[0]}_vs_{C2[0]}_replicate-scores.bg',
-                                                extras=[cmd, jobcall])
-
-    cmd = config.get('Pipeline', 'sciddo_deep_dump_hsp_ems')
-    sciddo_deep_dump_hsp_ems = pipe.transform(task_func=sci_obj.get_jobf('in_out'),
-                                              name='sciddo_deep_dump_hsp_ems',
-                                              input=output_from(sciddo_deep_scan),
-                                              filter=formatter(deep_scan_re),
-                                              output='{subpath[0][1]}/data_dump/deep_hg38_{SEGMENT[0]}_{C1[0]}_vs_{C2[0]}_hsp-emission.bed',
-                                              extras=[cmd, jobcall])
-
-    cmd = config.get('Pipeline', 'sciddo_deep_dump_hsp_rep')
-    sciddo_deep_dump_hsp_rep = pipe.transform(task_func=sci_obj.get_jobf('in_out'),
-                                              name='sciddo_deep_dump_hsp_rep',
-                                              input=output_from(sciddo_deep_scan),
-                                              filter=formatter(deep_scan_re),
-                                              output='{subpath[0][1]}/data_dump/deep_hg38_{SEGMENT[0]}_{C1[0]}_vs_{C2[0]}_hsp-replicate.bed',
-                                              extras=[cmd, jobcall])
-
-    cmd = config.get('Pipeline', 'sciddo_deep_dump_raw_ems')
-    sciddo_deep_dump_raw_ems = pipe.transform(task_func=sci_obj.get_jobf('in_out'),
-                                              name='sciddo_deep_dump_raw_ems',
-                                              input=output_from(sciddo_deep_scan),
-                                              filter=formatter(deep_scan_re),
-                                              output='{subpath[0][1]}/data_dump/deep_hg38_{SEGMENT[0]}_{C1[0]}_vs_{C2[0]}_raw-emission.bed',
-                                              extras=[cmd, jobcall])
-
-    cmd = config.get('Pipeline', 'sciddo_deep_dump_raw_rep')
-    sciddo_deep_dump_raw_rep = pipe.transform(task_func=sci_obj.get_jobf('in_out'),
-                                              name='sciddo_deep_dump_raw_rep',
-                                              input=output_from(sciddo_deep_scan),
-                                              filter=formatter(deep_scan_re),
-                                              output='{subpath[0][1]}/data_dump/deep_hg38_{SEGMENT[0]}_{C1[0]}_vs_{C2[0]}_raw-replicate.bed',
-                                              extras=[cmd, jobcall])
+    cmd = config.get('Pipeline', 'sciddo_deep_dump_raw_t1')
+    sciddo_deep_dump_raw_t1 = pipe.transform(task_func=sci_obj.get_jobf('in_out'),
+                                             name='sciddo_deep_dump_raw_t1',
+                                             input=output_from(sciddo_deep_scan),
+                                             filter=formatter(deep_scan_re),
+                                             output='{subpath[0][1]}/data_dump/raw_t1/{SEGMENT[0]}_hg38_{C1[0]}_vs_{C2[0]}_{SCORING[0]}_raw-t1.bed',
+                                             extras=[cmd, jobcall])
 
     sci_obj.set_config_env(dict(config.items('JobConfig')), dict(config.items('EnvConfig')))
     if args.gridmode:
@@ -925,99 +1227,235 @@ def build_pipeline(args, config, sci_obj, pipe):
     cmd = config.get('Pipeline', 'bg_to_bw')
     bg_to_bw_scores = pipe.transform(task_func=sci_obj.get_jobf('in_out'),
                                      name='bg_to_bw_scores',
-                                     input=output_from(sciddo_deep_dump_emission, sciddo_deep_dump_replicate),
+                                     input=output_from(sciddo_deep_dump_scores, sciddo_deep_dump_scores_hema),
                                      filter=suffix('.bg'),
                                      output='.bw',
                                      extras=[cmd, jobcall])
 
-    # intersect all vs all HSP files for various comparison plots
-    # this operates on the level of merged HSPs
+    # root folder for all intersections
     btl_deep_folder = os.path.join(workdir, 'bedtools', 'deep')
 
-    cmd = config.get('Pipeline', 'btl_deep_isect_hsp')
-    btl_deep_isect_hsp_params = make_btools_all_intersect(sciddo_deep_folder,
-                                                          os.path.join(btl_deep_folder, 'hsp_isect'),
-                                                          'hsp',
-                                                          cmd, jobcall)
-    btl_deep_isect_hsp = pipe.files(sci_obj.get_jobf('inpair_out'),
-                                    btl_deep_isect_hsp_params,
-                                    name='btl_deep_isect_hsp')
-    btl_deep_isect_hsp = btl_deep_isect_hsp.mkdir(os.path.join(btl_deep_folder, 'hsp_isect'))
-    btl_deep_isect_hsp = btl_deep_isect_hsp.follows(sciddo_deep_dump_hsp_ems)
-    btl_deep_isect_hsp = btl_deep_isect_hsp.follows(sciddo_deep_dump_hsp_rep)
+    match_hsp_bed = '(?P<SEG>[a-z0-9]+)_hg38_(?P<COMP>\w+)_(?P<SCORING>[a-z]+)_hsp\-(?P<THRESHOLD>t[10]+)\.bed'
 
-    cmd = config.get('Pipeline', 'btl_deep_isect_hsp')
-    btl_deep_isect_raw_params = make_btools_all_intersect(sciddo_deep_folder,
-                                                          os.path.join(btl_deep_folder, 'raw_isect'),
-                                                          'raw',
-                                                          cmd, jobcall)
-    btl_deep_isect_raw = pipe.files(sci_obj.get_jobf('inpair_out'),
-                                    btl_deep_isect_raw_params,
-                                    name='btl_deep_isect_raw')
-    btl_deep_isect_raw = btl_deep_isect_raw.follows(btl_deep_isect_hsp)
-    btl_deep_isect_raw = btl_deep_isect_raw.follows(sciddo_deep_dump_raw_ems)
-    btl_deep_isect_raw = btl_deep_isect_raw.follows(sciddo_deep_dump_raw_rep)
+    # ======= ORIENTATION =======
+    # INTERSECT HSPs WITH FILE X
+    # ===========================
 
-    # now intersect merged segments with E < 1
-    # with various annotations for later analysis
+    # intersect HSPs with various annotation files
+    cmd = config.get('Pipeline', 'btl_isect_hsp_any')
+    out_folder = os.path.join(btl_deep_folder, 'isect_hsp_any')
+    out_name = 'hsp_ovl_reg_{SEG[0]}_{COMP[0]}_{SCORING[0]}.tsv'
+    btl_isect_hsp_any = pipe.transform(task_func=sci_obj.get_jobf('in_out'),
+                                       name='btl_isect_hsp_any',
+                                       input=output_from(sciddo_deep_dump_hsp_t1),
+                                       filter=formatter(match_hsp_bed),
+                                       output=os.path.join(out_folder, out_name),
+                                       extras=[cmd, jobcall])
+    btl_isect_hsp_any = btl_isect_hsp_any.mkdir(out_folder)
 
-    # define regexp for dumped HSP BED files
-    # deep_hg38_cmm18_HG_vs_He_hsp-emission.bed
-    match_hsp_bed = 'deep_hg38_(?P<SEG>[a-z0-9]+)_(?P<COMP>\w+)_hsp\-(?P<SCORE>[a-z]+)\.bed'
+    # intersect HSPs with Ensembl Regulatory Build for more detailed analysis
+    cmd = config.get('Pipeline', 'btl_isect_hsp_rgb')
+    out_folder = os.path.join(btl_deep_folder, 'isect_hsp_rgb')
+    out_name = 'hsp_ovl_rgb_{SEG[0]}_{COMP[0]}_{SCORING[0]}.tsv'
+    btl_isect_hsp_rgb = pipe.transform(task_func=sci_obj.get_jobf('in_out'),
+                                       name='btl_isect_hsp_rgb',
+                                       input=output_from(sciddo_deep_dump_hsp_t1),
+                                       filter=formatter(match_hsp_bed),
+                                       output=os.path.join(out_folder, out_name),
+                                       extras=[cmd, jobcall])
+    btl_isect_hsp_rgb = btl_isect_hsp_rgb.mkdir(out_folder)
 
-    cmd = config.get('Pipeline', 'btl_deep_isect_genes')
-    out_folder = os.path.join(btl_deep_folder, 'gene_isect')
-    out_name = 'deep_hsp_ovl_degenes_{SEG[0]}_{COMP[0]}_{SCORE[0]}.tsv'
-    btl_deep_isect_genes = pipe.transform(task_func=sci_obj.get_jobf('in_out'),
-                                          name='btl_deep_isect_genes',
-                                          input=output_from(sciddo_deep_dump_hsp_ems,
-                                                            sciddo_deep_dump_hsp_rep),
-                                          filter=formatter(match_hsp_bed),
-                                          output=os.path.join(out_folder, out_name),
-                                          extras=[cmd, jobcall])
-    btl_deep_isect_genes = btl_deep_isect_genes.mkdir(out_folder)
-
-    cmd = config.get('Pipeline', 'btl_deep_isect_prom')
-    out_folder = os.path.join(btl_deep_folder, 'prom_isect')
-    out_name = 'deep_hsp_ovl_degprom_{SEG[0]}_{COMP[0]}_{SCORE[0]}.tsv'
-    btl_deep_isect_prom = pipe.transform(task_func=sci_obj.get_jobf('in_out'),
-                                         name='btl_deep_isect_prom',
-                                         input=output_from(sciddo_deep_dump_hsp_ems,
-                                                           sciddo_deep_dump_hsp_rep),
-                                         filter=formatter(match_hsp_bed),
-                                         output=os.path.join(out_folder, out_name),
-                                         extras=[cmd, jobcall])
-    btl_deep_isect_prom = btl_deep_isect_prom.mkdir(out_folder)
-
-    cmd = config.get('Pipeline', 'btl_deep_isect_rgb')
-    out_folder = os.path.join(btl_deep_folder, 'ensreg_isect')
-    out_name = 'deep_hsp_ovl_ensreg_{SEG[0]}_{COMP[0]}_{SCORE[0]}.tsv'
-    btl_deep_isect_ensreg = pipe.transform(task_func=sci_obj.get_jobf('in_out'),
-                                           name='btl_deep_isect_ensreg',
-                                           input=output_from(sciddo_deep_dump_hsp_ems,
-                                                             sciddo_deep_dump_hsp_rep),
-                                           filter=formatter(match_hsp_bed),
-                                           output=os.path.join(out_folder, out_name),
-                                           extras=[cmd, jobcall])
-    btl_deep_isect_ensreg = btl_deep_isect_ensreg.mkdir(out_folder)
-
-    cmd = config.get('Pipeline', 'btl_deep_isect_enh')
-    out_folder = os.path.join(btl_deep_folder, 'enh_isect')
-    out_name = 'deep_hsp_ovl_enh_{SEG[0]}_{COMP[0]}_{SCORE[0]}.tsv'
-    btl_deep_isect_enh = pipe.transform(task_func=sci_obj.get_jobf('in_out'),
-                                        name='btl_deep_isect_enh',
-                                        input=output_from(sciddo_deep_dump_hsp_ems,
-                                                          sciddo_deep_dump_hsp_rep),
+    # intersect HSPs with gene for more detailed analysis (similar to RGB boxplot)
+    cmd = config.get('Pipeline', 'btl_isect_hsp_gene')
+    out_folder = os.path.join(btl_deep_folder, 'isect_hsp_gene')
+    out_name = 'hsp_ovl_gene_{SEG[0]}_{COMP[0]}_{SCORING[0]}.tsv'
+    btl_isect_hsp_gene = pipe.transform(task_func=sci_obj.get_jobf('in_out'),
+                                        name='btl_isect_hsp_gene',
+                                        input=output_from(sciddo_deep_dump_hsp_t1),
                                         filter=formatter(match_hsp_bed),
                                         output=os.path.join(out_folder, out_name),
                                         extras=[cmd, jobcall])
-    btl_deep_isect_enh = btl_deep_isect_enh.mkdir(out_folder)
+    btl_isect_hsp_gene = btl_isect_hsp_gene.mkdir(out_folder)
 
+    # to check if there is a problem detecting shorter DE genes
+    # intersect genes also with EXP=100 thresholded HSPs
+    cmd = config.get('Pipeline', 'btl_isect_gene_hsp')
+    out_folder = os.path.join(btl_deep_folder, 'isect_gene_hsp100')
+    out_name = 'gene_ovl_hsp-t100_{SEG[0]}_{COMP[0]}_{SCORING[0]}.tsv'
+    btl_deep_isect_t100 = pipe.transform(task_func=sci_obj.get_jobf('in_out'),
+                                         name='btl_isect_gene_hsp100',
+                                         input=output_from(sciddo_deep_dump_hsp_t100),
+                                         filter=formatter(match_hsp_bed),
+                                         output=os.path.join(out_folder, out_name),
+                                         extras=[cmd, jobcall])
+    btl_deep_isect_t100 = btl_deep_isect_t100.mkdir(out_folder)
+
+    # intersect raw (unmerged) segments with self to show consistency
+    # of results across all replicate comparisons
+    cmd = config.get('Pipeline', 'btl_isect_self')
+    out_folder = os.path.join(btl_deep_folder, 'isect_raw_self')
+    btl_isect_raw_self = pipe.transform(task_func=sci_obj.get_jobf('in_out'),
+                                        name='btl_isect_raw_self',
+                                        input=output_from(sciddo_deep_dump_raw_t1),
+                                        filter=suffix('.bed'),
+                                        output='.tsv',
+                                        output_dir=out_folder,
+                                        extras=[cmd, jobcall])
+    btl_isect_raw_self = btl_isect_raw_self.mkdir(out_folder)
+
+    # intersect raw (unmerged) segments with segments from
+    # other segmentations to show robust identification of
+    # hotspots of changing chromatin
+    cmd = config.get('Pipeline', 'btl_isect_pair')
+    btl_isect_raw_other_params = make_btools_all_intersect(sciddo_deep_folder,
+                                                           os.path.join(btl_deep_folder, 'isect_raw_other'),
+                                                           'raw-t1',
+                                                           cmd, jobcall)
+    btl_isect_raw_other = pipe.files(sci_obj.get_jobf('inpair_out'),
+                                     btl_isect_raw_other_params,
+                                     name='btl_isect_raw_other')
+    btl_isect_raw_other = btl_isect_raw_other.mkdir(os.path.join(btl_deep_folder, 'isect_raw_other'))
+    btl_isect_raw_other = btl_isect_raw_other.follows(sciddo_deep_dump_raw_t1)
+
+    # === CHANGED ORIENTATION ===
+    # INTERSECT FILE X WITH HSPs
+    # ===========================
+
+    # intersect genes with HSPs
+    cmd = config.get('Pipeline', 'btl_isect_gene_hsp')
+    out_folder = os.path.join(btl_deep_folder, 'isect_gene_hsp')
+    out_name = 'gene_ovl_hsp_{SEG[0]}_{COMP[0]}_{SCORING[0]}.tsv'
+    btl_isect_gene_hsp = pipe.transform(task_func=sci_obj.get_jobf('in_out'),
+                                        name='btl_isect_gene_hsp',
+                                        input=output_from(sciddo_deep_dump_hsp_t1),
+                                        filter=formatter(match_hsp_bed),
+                                        output=os.path.join(out_folder, out_name),
+                                        extras=[cmd, jobcall])
+    btl_isect_gene_hsp = btl_isect_gene_hsp.mkdir(out_folder)
+
+    # intersect promoters with HSPs
+    cmd = config.get('Pipeline', 'btl_isect_prom_hsp')
+    out_folder = os.path.join(btl_deep_folder, 'isect_prom_hsp')
+    out_name = 'prom_ovl_hsp_{SEG[0]}_{COMP[0]}_{SCORING[0]}.tsv'
+    btl_isect_prom_hsp = pipe.transform(task_func=sci_obj.get_jobf('in_out'),
+                                        name='btl_isect_prom_hsp',
+                                        input=output_from(sciddo_deep_dump_hsp_t1),
+                                        filter=formatter(match_hsp_bed),
+                                        output=os.path.join(out_folder, out_name),
+                                        extras=[cmd, jobcall])
+    btl_isect_prom_hsp = btl_isect_prom_hsp.mkdir(out_folder)
+
+    # intersect enhancers with HSPs
+    cmd = config.get('Pipeline', 'btl_isect_enh_hsp')
+    out_folder = os.path.join(btl_deep_folder, 'isect_enh_hsp')
+    out_name = 'enh_ovl_hsp_{SEG[0]}_{COMP[0]}_{SCORING[0]}.tsv'
+    btl_isect_enh_hsp = pipe.transform(task_func=sci_obj.get_jobf('in_out'),
+                                       name='btl_isect_enh_hsp',
+                                       input=output_from(sciddo_deep_dump_hsp_t1),
+                                       filter=formatter(match_hsp_bed),
+                                       output=os.path.join(out_folder, out_name),
+                                       extras=[cmd, jobcall])
+    btl_isect_enh_hsp = btl_isect_enh_hsp.mkdir(out_folder)
+
+    # intersect genes/enhancers with PePr peaks
+    cmd = config.get('Pipeline', 'btl_isect_pair')
+    out_folder = os.path.join(btl_deep_folder, 'isect_any_pepr')
+    enhancer_file = os.path.join(config.get('References', 'project_ref'), 'hg38_genehancer_gencodeV21_complete.bed')
+    btl_isect_any_pepr_params = make_pepr_any_intersect_params(deep_to_bed, enhancer_file,
+                                                               pepr_deep_output, out_folder,
+                                                               cmd, jobcall)
+    btl_isect_any_pepr = pipe.files(sci_obj.get_jobf('inpair_out'),
+                                    btl_isect_any_pepr_params,
+                                    name='btl_isect_any_pepr')
+    btl_isect_any_pepr = btl_isect_any_pepr.mkdir(out_folder)
+
+
+    # cmd = config.get('Pipeline', 'btl_deep_isect_hsp')
+    # btl_deep_isect_raw_params = make_btools_all_intersect(sciddo_deep_folder,
+    #                                                       os.path.join(btl_deep_folder, 'raw_isect'),
+    #                                                       'raw',
+    #                                                       cmd, jobcall)
+    # btl_deep_isect_raw = pipe.files(sci_obj.get_jobf('inpair_out'),
+    #                                 btl_deep_isect_raw_params,
+    #                                 name='btl_deep_isect_raw')
+    # btl_deep_isect_raw = btl_deep_isect_raw.follows(btl_deep_isect_hsp)
+    #
+    # # now intersect merged segments with E < 1
+    # # with various annotations for later analysis
+    #
+    # # define regexp for dumped HSP BED files
+    # # deep_hg38_cmm18_HG_vs_He_hsp-emission.bed
+    # match_hsp_bed = 'deep_hg38_(?P<SEG>[a-z0-9]+)_(?P<COMP>\w+)_hsp\-(?P<SCORE>[a-z]+)\.bed'
+    #
+    #
+    #
+    #
+    #
+    # cmd = config.get('Pipeline', 'btl_deep_isect_enh')
+    # out_folder = os.path.join(btl_deep_folder, 'enh_isect')
+    # out_name = 'deep_hsp_ovl_enh_{SEG[0]}_{COMP[0]}_{SCORE[0]}.tsv'
+    # btl_deep_isect_enh = pipe.transform(task_func=sci_obj.get_jobf('in_out'),
+    #                                     name='btl_deep_isect_enh',
+    #                                     input=output_from(sciddo_deep_dump_hsp_t1),
+    #                                     filter=formatter(match_hsp_bed),
+    #                                     output=os.path.join(out_folder, out_name),
+    #                                     extras=[cmd, jobcall])
+    # btl_deep_isect_enh = btl_deep_isect_enh.mkdir(out_folder)
+    #
+    # # intersect genes and enhancers with HSPs
+    # # to better understand how HSP hits alter
+    # # gene expression patterns
+    # cmd = config.get('Pipeline', 'btl_deep_isect_inv')
+    # out_folder = os.path.join(btl_deep_folder, 'inv_isect')
+    # enhancer_file = os.path.join(config.get('References', 'project_ref'), 'hg38_genehancer_gencodeV21_complete.bed')
+    # btl_deep_isect_inv_params = make_invert_intersect_params(deep_to_bed, enhancer_file,
+    #                                                          sciddo_deep_folder, out_folder,
+    #                                                          cmd, jobcall)
+    # btl_deep_isect_inv = pipe.files(sci_obj.get_jobf('inpair_out'),
+    #                                 btl_deep_isect_inv_params,
+    #                                 name='btl_deep_isect_inv')
+    # btl_deep_isect_inv = btl_deep_isect_inv.mkdir(out_folder)
+    #
+    #
+    # outfolder = os.path.join(btl_deep_folder, 'pepr_locus_isect')
+    # cmd = config.get('Pipeline', 'btl_deep_isect_hsp_deg_pepr')
+    # btl_deep_isect_hsp_deg_pepr_params = make_btools_hsp_pepr_isect(sciddo_deep_folder,
+    #                                                                 pepr_deep_output,
+    #                                                                 deep_to_bed,
+    #                                                                 'locus', 'diff',
+    #                                                                 outfolder, cmd, jobcall)
+    #
+    # btl_deep_isect_hsp_deg_pepr = pipe.files(sci_obj.get_jobf('in_out'),
+    #                                          btl_deep_isect_hsp_deg_pepr_params,
+    #                                          name='btl_deep_isect_hsp_deg_pepr')
+    # btl_deep_isect_hsp_deg_pepr = btl_deep_isect_hsp_deg_pepr.mkdir(outfolder)
+    # btl_deep_isect_hsp_deg_pepr = btl_deep_isect_hsp_deg_pepr.follows(conv_deep_diff)
+    # btl_deep_isect_hsp_deg_pepr = btl_deep_isect_hsp_deg_pepr.follows(sciddo_deep_dump_hsp_t1)
+    # btl_deep_isect_hsp_deg_pepr = btl_deep_isect_hsp_deg_pepr.follows(pepr_deep_filter)
+    #
+    # outfolder = os.path.join(btl_deep_folder, 'pepr_locus_isect')
+    # cmd = config.get('Pipeline', 'btl_deep_isect_hsp_deg_pepr')
+    # btl_deep_isect_hsp_stg_pepr_params = make_btools_hsp_pepr_isect(sciddo_deep_folder,
+    #                                                                 pepr_deep_output,
+    #                                                                 deep_to_bed,
+    #                                                                 'locus', 'stable',
+    #                                                                 outfolder, cmd, jobcall)
+    #
+    # btl_deep_isect_hsp_stg_pepr = pipe.files(sci_obj.get_jobf('in_out'),
+    #                                          btl_deep_isect_hsp_stg_pepr_params,
+    #                                          name='btl_deep_isect_hsp_stg_pepr')
+    # btl_deep_isect_hsp_stg_pepr = btl_deep_isect_hsp_stg_pepr.mkdir(outfolder)
+    # btl_deep_isect_hsp_stg_pepr = btl_deep_isect_hsp_stg_pepr.follows(conv_deep_diff)
+    # btl_deep_isect_hsp_stg_pepr = btl_deep_isect_hsp_stg_pepr.follows(sciddo_deep_dump_hsp_t1)
+    # btl_deep_isect_hsp_stg_pepr = btl_deep_isect_hsp_stg_pepr.follows(pepr_deep_filter)
+    # btl_deep_isect_hsp_stg_pepr = btl_deep_isect_hsp_stg_pepr.follows(btl_deep_isect_hsp_deg_pepr)
+    #
     # ======================================
     # SPECIAL TASKS FOR INDIVIDUAL USECASES
     # ======================================
 
     # use case 1: HepG2 / EP300 enhancer activity
+    # cmm18_hg38_HG_vs_Ma_penem_hsp-t1.bed
 
     usecase_out = os.path.join(workdir, 'usecases')
 
@@ -1026,9 +1464,9 @@ def build_pipeline(args, config, sci_obj, pipe):
     cmd = config.get('Pipeline', 'btl_uc1_isect_p300')
     btl_uc1_isect_p300 = pipe.transform(task_func=sci_obj.get_jobf('in_out'),
                                         name='btl_uc1_isect_p300',
-                                        input=output_from(sciddo_deep_dump_hsp_ems),
-                                        filter=formatter('.*/deep_hg38_(?P<SEG>cmm18)_(?P<COMP>HG_vs_Mo)_hsp\-emission\.bed'),
-                                        output=os.path.join(uc1_folder, 'uc1_{SEG[0]}_{COMP[0]}_p300_hsp.bed'),
+                                        input=output_from(sciddo_deep_dump_hsp_t1),
+                                        filter=formatter('.*/(?P<SEG>cmm18)_hg38_(?P<COMP>HG_vs_Mo)_(?P<SCORE>penem)_hsp\-t1\.bed'),
+                                        output=os.path.join(uc1_folder, 'uc1_{SEG[0]}_{SCORE[0]}_{COMP[0]}_p300_hsp.bed'),
                                         extras=[cmd, jobcall])
     btl_uc1_isect_p300 = btl_uc1_isect_p300.mkdir(uc1_folder)
 
@@ -1050,16 +1488,16 @@ def build_pipeline(args, config, sci_obj, pipe):
     sciddo_uc1_enh_onoff = pipe.transform(task_func=sci_obj.get_jobf('in_out'),
                                           name='sciddo_uc1_enh_onoff',
                                           input=output_from(sciddo_deep_scan),
-                                          filter=formatter('deep_hsp_hg38_(?P<SEG>cmm18)_CELLTYPE_(?P<C1>HG)_vs_CELLTYPE_(?P<C2>Mo)\.h5'),
-                                          output=os.path.join(uc1_folder, 'uc1_{SEG[0]}_{C1[0]}_vs_{C2[0]}_enh-on-off_splits.bed'),
+                                          filter=formatter('sciddo-run_hg38_(?P<SEG>cmm18)_(?P<SCORE>penem)_(?P<C1>HG)_vs_(?P<C2>Mo)\.h5'),
+                                          output=os.path.join(uc1_folder, 'uc1_{SEG[0]}_{SCORE[0]}_{C1[0]}_vs_{C2[0]}_enh-on-off_splits.bed'),
                                           extras=[cmd, jobcall])
 
     cmd = config.get('Pipeline', 'sciddo_uc1_enh_offon')
     sciddo_uc1_enh_offon = pipe.transform(task_func=sci_obj.get_jobf('in_out'),
                                           name='sciddo_uc1_enh_offon',
                                           input=output_from(sciddo_deep_scan),
-                                          filter=formatter('deep_hsp_hg38_(?P<SEG>cmm18)_CELLTYPE_(?P<C1>HG)_vs_CELLTYPE_(?P<C2>Mo)\.h5'),
-                                          output=os.path.join(uc1_folder, 'uc1_{SEG[0]}_{C1[0]}_vs_{C2[0]}_enh-off-on_splits.bed'),
+                                          filter=formatter('sciddo-run_hg38_(?P<SEG>cmm18)_(?P<SCORE>penem)_(?P<C1>HG)_vs_(?P<C2>Mo)\.h5'),
+                                          output=os.path.join(uc1_folder, 'uc1_{SEG[0]}_{SCORE[0]}_{C1[0]}_vs_{C2[0]}_enh-off-on_splits.bed'),
                                           extras=[cmd, jobcall])
 
     sci_obj.set_config_env(dict(config.items('JobConfig')), dict(config.items('EnvConfig')))
@@ -1075,81 +1513,19 @@ def build_pipeline(args, config, sci_obj, pipe):
                                           filter=formatter('(?P<BASENAME>\w+)_(?P<DIR>enh[\-onf]+)_splits\.bed'),
                                           output=os.path.join(uc1_folder, '{BASENAME[0]}_{DIR[0]}_p300.bed'),
                                           extras=[cmd, jobcall])
+    btl_uc1_isect_switch = btl_uc1_isect_switch.follows(btl_uc1_p300_uniq)
 
-
-
-
-
-    # cmd = config.get('Pipeline', 'btl_deep_isect_pub')
-    # btl_deep_isect_pub = pipe.transform(task_func=sci_obj.get_jobf('in_out'),
-    #                                     name='btl_deep_isect_pub',
-    #                                     input=output_from(sciddo_deep_dump_pub),
-    #                                     filter=suffix('.bed'),
-    #                                     output='.ovl.bed',
-    #                                     extras=[cmd, jobcall])
-    #
-    # cmd = config.get('Pipeline', 'btl_deep_isect_deb_pub')
-    # hsp_isect_out = os.path.join(sciddo_deep_folder, 'hsp_isect')
-    # filter_re = 'hsp_(?P<C1>[A-Za-z]{2})_vs_(?P<C2>[A-Za-z]{2})_emission.bed'
-    # btl_deep_isect_deb_pub = pipe.transform(task_func=sci_obj.get_jobf('in_out'),
-    #                                         name='btl_deep_isect_deb_pub',
-    #                                         input=output_from(sciddo_deep_dump_pub),
-    #                                         filter=formatter(filter_re),
-    #                                         output=os.path.join(hsp_isect_out,
-    #                                                             'hsp_{C1[0]}_vs_{C2[0]}_emission_de-body.bed'),
-    #                                         extras=[cmd, jobcall])
-    # btl_deep_isect_deb_pub = btl_deep_isect_deb_pub.mkdir(hsp_isect_out)
-    # btl_deep_isect_deb_pub = btl_deep_isect_deb_pub.follows(conv_deep_diff)
-    #
-    # cmd = config.get('Pipeline', 'btl_deep_isect_rgb_pub')
-    # hsp_isect_out = os.path.join(sciddo_deep_folder, 'hsp_isect')
-    # filter_re = 'hsp_(?P<C1>[A-Za-z]{2})_vs_(?P<C2>[A-Za-z]{2})_emission.bed'
-    # btl_deep_isect_rgb_pub = pipe.transform(task_func=sci_obj.get_jobf('in_out'),
-    #                                         name='btl_deep_isect_rgb_pub',
-    #                                         input=output_from(sciddo_deep_dump_pub),
-    #                                         filter=formatter(filter_re),
-    #                                         output=os.path.join(hsp_isect_out,
-    #                                                             'hsp_{C1[0]}_vs_{C2[0]}_emission_ensregb.bed'),
-    #                                         extras=[cmd, jobcall])
-    # btl_deep_isect_rgb_pub = btl_deep_isect_rgb_pub.mkdir(hsp_isect_out)
-
-
-    ### below: full DEEP dataset, contains unpublished data, ignore
-
-    # cmd = config.get('Pipeline', 'sciddo_deep_conv_prv')
-    # sciddo_deep_conv_prv = pipe.transform(task_func=sci_obj.get_jobf('in_out'),
-    #                                    name='sciddo_deep_conv_prv',
-    #                                    input=output_from(cmm_deep_mkseg),
-    #                                    filter=formatter('chk$'),
-    #                                    output=os.path.join(sciddo_deep_folder, 'sciddo_deep_conv_prv.chk'),
-    #                                    extras=[cmd, jobcall])
-    # sciddo_deep_conv_prv = sciddo_deep_conv_prv.mkdir(sciddo_deep_folder)
-    # sciddo_deep_conv_prv = sciddo_deep_conv_prv.active_if(False)
-
-    # =====================================================================
-    # Process state segmentation of ROADMAP samples
-    # Set folders for ROADMAP samples
-
-    # ======================================================================
-    # ROADMAP dataset does not contain appropriate replicates, thus it is
-    # less interesting to work with - ignore for now
-    #
-    # sciddo_remc_folder = os.path.join(workdir, 'sciddo', 'remc')
-    #
-    # sci_obj.set_config_env(dict(config.items('ParallelJobConfig')), dict(config.items('EnvConfig')))
-    # if args.gridmode:
-    #     jobcall = sci_obj.ruffus_gridjob()
-    # else:
-    #     jobcall = sci_obj.ruffus_localjob()
-    #
-    # cmd = config.get('Pipeline', 'sciddo_remc_conv')
-    # sciddo_remc_conv = pipe.transform(task_func=sci_obj.get_jobf('in_out'),
-    #                                name='sciddo_remc_conv',
-    #                                input=output_from(sciddo_deep_conv_pub),
-    #                                filter=formatter('chk$'),
-    #                                output=os.path.join(sciddo_remc_folder, 'sciddo_remc_conv.chk'),
-    #                                extras=[cmd, jobcall])
-    # sciddo_remc_conv = sciddo_remc_conv.mkdir(sciddo_remc_folder)
-    # sciddo_remc_conv = sciddo_remc_conv.active_if(os.path.isfile(config.get('References', 'remc_design')))
-
+    # run all task
+    statediff_run_all = pipe.merge(task_func=touch_checkfile,
+                                   name='statediff_run_all',
+                                   input=output_from(sciddo_deep_conv_cmm18, sciddo_deep_conv_ecs,
+                                                     sciddo_deep_stats, sciddo_deep_score,
+                                                     sciddo_deep_scan, sciddo_deep_dump_seg,
+                                                     sciddo_deep_dump_hsp_t1, sciddo_deep_dump_hsp_t100,
+                                                     sciddo_deep_dump_raw_t1,
+                                                     btl_isect_any_pepr, btl_uc1_p300_uniq, btl_uc1_isect_switch,
+                                                     btl_isect_enh_hsp, btl_isect_gene_hsp, btl_isect_hsp_rgb,
+                                                     btl_isect_raw_other, btl_deep_isect_t100, btl_isect_raw_self,
+                                                     btl_isect_hsp_any, btl_isect_hsp_gene),
+                                   output=os.path.join(workdir, 'statediff_run_all.chk'))
     return pipe
