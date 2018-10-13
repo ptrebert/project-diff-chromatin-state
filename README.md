@@ -28,6 +28,12 @@ All figures in the publication can be recreated by running the relevant Jupyter 
 - figure 11: `plot_uc1_p300_enh.ipynb`
 - figure 12: `plot_hsp_pepr_perf.ipynb`
 
+## The SCIDDO tool
+
+Instruction how to install and use the SCIDDO tool are available here:
+
+[SCIDDO repo: github.com/ptrebert/sciddo](https://github.com/ptrebert/sciddo)
+
 ## Steps to replicate all results
 
 0) It is strongly recommended to run the analysis on a compute cluster with a DRMAA-compatible job scheduler. The expected runtime for the entire project is 2-3 days (assuming that a handful of servers is available to run the pipeline in parallel).
