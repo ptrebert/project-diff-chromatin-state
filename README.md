@@ -4,7 +4,7 @@
 
 This repository: [DOI: 10.17617/1.6K](https://doi.org/10.17617/1.6K)
 
-bioRxiv preprint: pending
+bioRxiv preprint: [DOI: 10.1101/441766](https://doi.org/10.1101/441766)
 
 SCIDDO manuscript: submitted
 
