@@ -1,0 +1,39 @@
+{
+  "bmc_genbio":
+  {
+      "one_col": {
+        "square": [3.346, 3.346],
+        "half": [3.346, 1.693],
+        "double": [3.346, 6.693]
+      },
+      "two_col": {
+        "square": [6.693, 6.693],
+        "half": [6.693, 3.346]
+      },
+      "resolution": {
+        "print_lo": 150,
+        "print_hi": 350,
+        "web_lo": 150,
+        "web_hi": 350
+      }
+  },
+
+  "ox_bioinf":
+  {
+    "one_col": {
+      "square": [3.386, 3.386],
+      "half": [3.386, 1.693],
+      "double": [3.386, 6.277]
+    },
+    "two_col": {
+      "square": [7.008, 7.008],
+      "half": [7.008, 3.504]
+    },
+    "resolution": {
+      "print_lo": 150,
+      "print_hi": 350,
+      "web_lo": 150,
+      "web_hi": 350
+    }
+  }
+}
