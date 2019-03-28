@@ -86,3 +86,6 @@ venv/
 
 # Rope project settings
 .ropeproject
+
+# PyCharm .idea folder
+.idea/
