@@ -39,6 +39,7 @@ dependencies:
 #  - pepr=1.1.24  # still some issues with Python3 support
   - ucsc-bedgraphtobigwig
   - xlrd=1.1.0
+  - ruffus=2.6.3  # added only for syntax highlighting in IDE
 # RGT still does not fully support Python3...
 #  - pip:
 #      - RGT
