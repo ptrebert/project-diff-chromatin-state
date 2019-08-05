@@ -728,6 +728,23 @@ def make_pepr_any_intersect_params(gene_root, enhancer_file, pepr_root, out_fold
     return args
 
 
+def collect_random_set_files(workdir):
+
+    folders = [
+        'sciddo/deep/cmm18/data_dump/rand_t1',
+        'sciddo/deep/ecs18/data_dump/rand_t1',
+        'sciddo/deep/ecs10/data_dump/rand_t1'
+    ]
+
+    random_sets = []
+    for f in folders:
+        bed_files = os.listdir(os.path.join(workdir, f))
+        bed_files = list(filter(lambda x: x.endswith('.bed'), bed_files))
+        bed_files = [os.path.join(workdir, f, bf) for bf in bed_files]
+        random_sets.extend(bed_files)
+    return random_sets
+
+
 def touch_checkfile(inputfiles, outputfile):
 
     with open(outputfile, 'w') as checkfile:
@@ -743,7 +760,6 @@ def build_pipeline(args, config, sci_obj, pipe):
     :param sci_obj:
     :return:
     """
-
     if pipe is None:
         pipe = Pipeline(name=config.get('Pipeline', 'name'))
     else:
@@ -1184,6 +1200,14 @@ def build_pipeline(args, config, sci_obj, pipe):
                                              output='{subpath[0][1]}/data_dump/score_tracks/{SEGMENT[0]}_hg38_{C1[0]}_vs_{C2[0]}_{SCORING[0]}_scores.bg',
                                              extras=[cmd, jobcall])
 
+    cmd = config.get('Pipeline', 'sciddo_deep_dump_trans')
+    sciddo_deep_dump_trans = pipe.transform(task_func=sci_obj.get_jobf('in_out'),
+                                            name='sciddo_deep_dump_trans',
+                                            input=output_from(sciddo_deep_scan),
+                                            filter=formatter(deep_scan_re),
+                                            output='{subpath[0][1]}/data_dump/transition_counts/{SEGMENT[0]}_hg38_{C1[0]}_vs_{C2[0]}_{SCORING[0]}_transitions.tsv',
+                                            extras=[cmd, jobcall])
+
     deep_scan_re_hema = 'sciddo-run_hg38_(?P<SEGMENT>[cm18]{5})_(?P<SCORING>[a-z]+)_(?P<C1>[He]{2,5})_vs_(?P<C2>[Ma]{2,5})\.h5'
     cmd = config.get('Pipeline', 'sciddo_deep_dump_scores_hema')
     sciddo_deep_dump_scores_hema = pipe.subdivide(task_func=sci_obj.get_jobf('in_pat'),
@@ -1316,6 +1340,45 @@ def build_pipeline(args, config, sci_obj, pipe):
                                      name='btl_isect_raw_other')
     btl_isect_raw_other = btl_isect_raw_other.mkdir(os.path.join(btl_deep_folder, 'isect_raw_other'))
     btl_isect_raw_other = btl_isect_raw_other.follows(sciddo_deep_dump_raw_t1)
+
+    sci_obj.set_config_env(dict(config.items('ParallelJobConfig')), dict(config.items('EnvConfig')))
+    if args.gridmode:
+        jobcall = sci_obj.ruffus_gridjob()
+    else:
+        jobcall = sci_obj.ruffus_localjob()
+
+    # Create background set by random sampling
+    cmd = config.get('Pipeline', 'sample_random_regions')
+    smp_random_genomic_regions = pipe.transform(task_func=sci_obj.get_jobf('in_out'),
+                                                name='smp_random_genomic_regions',
+                                                input=output_from(sciddo_deep_dump_hsp_t1),
+                                                filter=formatter(match_hsp_bed),
+                                                output='{subpath[0][1]}/rand_t1/{SEG[0]}_hg38_{COMP[0]}_{SCORING[0]}_rand-{THRESHOLD[0]}.bed',
+                                                extras=[cmd, jobcall])
+
+    sci_obj.set_config_env(dict(config.items('JobConfig')), dict(config.items('EnvConfig')))
+    if args.gridmode:
+        jobcall = sci_obj.ruffus_gridjob()
+    else:
+        jobcall = sci_obj.ruffus_localjob()
+
+    collect_random_sets = pipe.originate(lambda x: x,
+                                         collect_random_set_files(workdir),
+                                         name='collect_random_sets')
+    collect_random_sets = collect_random_sets.follows(smp_random_genomic_regions)
+
+    # intersect random regions with various annotation files
+    cmd = config.get('Pipeline', 'btl_isect_hsp_any')
+    out_folder = os.path.join(btl_deep_folder, 'isect_rand_any')
+    match_rand_bed = '(?P<SEG>[a-z0-9]+)_hg38_(?P<COMP>\w+)_(?P<SCORING>[a-z]+)_rand\-(?P<THRESHOLD>t[0-9\.]+)\.bed'
+    out_name = 'rand_ovl_reg_{SEG[0]}_{COMP[0]}_{SCORING[0]}.{THRESHOLD[0]}.tsv'
+    btl_isect_rand_any = pipe.transform(task_func=sci_obj.get_jobf('in_out'),
+                                        name='btl_isect_rand_any',
+                                        input=output_from(collect_random_sets),
+                                        filter=formatter(match_rand_bed),
+                                        output=os.path.join(out_folder, out_name),
+                                        extras=[cmd, jobcall])
+    btl_isect_rand_any = btl_isect_rand_any.mkdir(out_folder)
 
     # === CHANGED ORIENTATION ===
     # INTERSECT FILE X WITH HSPs
@@ -1522,7 +1585,9 @@ def build_pipeline(args, config, sci_obj, pipe):
                                                      sciddo_deep_stats, sciddo_deep_score,
                                                      sciddo_deep_scan, sciddo_deep_dump_seg,
                                                      sciddo_deep_dump_hsp_t1, sciddo_deep_dump_hsp_t100,
-                                                     sciddo_deep_dump_raw_t1,
+                                                     sciddo_deep_dump_raw_t1, smp_random_genomic_regions,
+                                                     sciddo_deep_dump_trans,
+                                                     btl_isect_rand_any,
                                                      btl_isect_any_pepr, btl_uc1_p300_uniq, btl_uc1_isect_switch,
                                                      btl_isect_enh_hsp, btl_isect_gene_hsp, btl_isect_hsp_rgb,
                                                      btl_isect_raw_other, btl_deep_isect_t100, btl_isect_raw_self,
